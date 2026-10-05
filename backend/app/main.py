@@ -1,5 +1,8 @@
+from pathlib import Path
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from .config import settings
 from .errors import init_handlers
@@ -27,3 +30,8 @@ app.include_router(lookup.router, prefix="/api")
 app.include_router(orders.router, prefix="/api")
 app.include_router(analytics.router, prefix="/api")
 app.include_router(export.router, prefix="/api")
+
+# In production, serve the built Vue frontend from the same origin.
+_dist = Path(__file__).resolve().parents[2] / "frontend" / "dist"
+if _dist.exists():
+    app.mount("/", StaticFiles(directory=_dist, html=True), name="app")
