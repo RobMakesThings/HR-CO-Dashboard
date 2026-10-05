@@ -1,0 +1,436 @@
+# HR + CO Dashboard — Design Specification
+
+**Date:** 2026-10-04
+**Status:** Approved for planning
+**Owner:** masta
+**Stack:** FastAPI + Python `oracledb` (thin) · Vue 3 + Vite + PrimeVue 4 (Sakai theme) + Tailwind CSS
+
+---
+
+## 1. Overview
+
+A web dashboard that lets an operator browse, search, create, update, and delete
+records in the **Human Resources (`HR`)** and **Customer Orders (`CO`)** Oracle
+sample schemas, view business **trends**, procedurally **seed** test data, and
+**export** the current filtered view to CSV/XLSX — all behind a role-based login.
+
+It is a **new, standalone project** and is intentionally separate from the older
+MySQL `employees`-database monitoring dashboard that lives in the parent
+`sqltests/` folder. It lives in its own folder (`hr_co_dashboard`) and targets
+the **Oracle** copies of CO + HR that are already installed in a local Docker
+container.
+
+---
+
+## 2. Goals
+
+- Read, create, update, delete the four primary entities (employees, orders,
+  customers, products) through a polished UI.
+- Show 8 server-side trend/analytics views over the CO and HR data.
+- Role-based auth (`admin` vs `viewer`) with JWT.
+- Procedural data seeding via `faker` (single-row fill + bulk), while still
+  allowing fully manual entry.
+- Export the current filtered view to CSV and XLSX.
+- Fast local dev (Vite + uvicorn) with a path to later containerization.
+
+### Non-goals / out of scope
+
+- No public self-service registration (admin creates users).
+- No OAuth/SSO.
+- No edits to the original sample tables' *meaning* — we add foreign-but-safe
+  columns only if a trend requires it, and only via migration (none currently
+  planned besides the auth schema).
+- No multi-tenancy / audit logging of every mutation beyond auth.
+- No realtime/live DB-health monitoring (that belongs to the other dashboard).
+
+---
+
+## 3. Tech Stack
+
+| Layer       | Choice                                                          |
+|-------------|-----------------------------------------------------------------|
+| Backend     | Python 3.12, FastAPI, `python-oracledb` (thin mode, no client)  |
+| Auth        | JWT (access token) via `PyJWT`; bcrypt hashing via `passlib[bcrypt]` |
+| Validation  | Pydantic v2                                                      |
+| Export      | `csv` (stdlib) + `openpyxl` (XLSX)                               |
+| Seeding     | `Faker`                                                           |
+| Frontend    | Vue 3 (Composition API), Vite, PrimeVue 4 (Sakai theme preset), Tailwind CSS, Vue Router, Pinia, Axios, Chart.js (via PrimeVue `Chart`) |
+| Tooling     | `uvicorn`, `pytest`, `python-dotenv`                             |
+
+---
+
+## 4. Architecture
+
+```
+┌─────────────────┐   REST/JSON (JWT)   ┌───────────────────────┐  SQL   ┌──────────────────┐
+│  Vue 3 UI        │ ──────────────────▶ │        FastAPI         │ ─────▶ │ Oracle 23c (Docker)│
+│  PrimeVue Sakai  │ ◀────────────────── │   python-oracledb thin │ ◀───── │  CO + HR schemas   │
+│  Tailwind        │   CSV/XLSX stream  │                        │        │  dashboard schema  │
+└─────────────────┘                     └───────────────────────┘        └──────────────────┘
+      Vite dev (proxy /api)                 uvicorn dev
+      Prod: FastAPI serves built dist/
+```
+
+- **Backend:** parameterized SQL in a thin repository layer (no heavy ORM).
+  This keeps full control of the 1M-row analytics queries and index usage.
+- **Frontend:** Vite dev server proxies `/api` → FastAPI. In production,
+  FastAPI mounts the built `frontend/dist` and serves UI + API from one origin.
+- **Decoupling:** all config is env-driven; no hardcoded paths/creds. This is the
+  groundwork that makes containerization later a no-op.
+
+---
+
+## 5. Data Sources
+
+Source of truth is the installed Oracle instance at
+`localhost:1521/FREEPDB1`. Observed volumes (read-only probe, 2026-10-04):
+
+| Schema | Table          | Rows        |
+|--------|----------------|-------------|
+| CO     | customers      | 392         |
+| CO     | stores         | 23          |
+| CO     | products       | 46          |
+| CO     | **orders**     | **1,001,950** |
+| CO     | **order_items**| **3,006,034** |
+| CO     | shipments      | 1,892       |
+| CO     | inventory      | 566         |
+| HR     | employees      | 107         |
+| HR     | departments    | 27          |
+| HR     | jobs           | 19          |
+| HR     | locations      | 23          |
+| HR     | countries      | 25          |
+| HR     | regions        | 5           |
+| HR     | job_history    | 10          |
+
+The CO tables are large, so **all aggregation runs in Oracle**; the browser
+only ever receives paged rows or aggregate results, never the full tables.
+
+---
+
+## 6. Auth: `dashboard` schema
+
+A dedicated Oracle schema `dashboard` holds application identity, kept separate
+from the sample schemas.
+
+**Table `app_users`:**
+```
+APP_USER_ID   NUMBER GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY
+USERNAME      VARCHAR2(50)  NOT NULL UNIQUE
+PASSWORD_HASH VARCHAR2(255) NOT NULL
+ROLE          VARCHAR2(20)  NOT NULL CHECK (ROLE IN ('admin','viewer'))
+CREATED_AT    TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+```
+
+**Provisioning** (`backend/seed/provision_dashboard.sql`), run once with
+privileged (SYSTEM) access:
+1. `CREATE USER dashboard IDENTIFIED BY <pwd>` + grants.
+2. Create `app_users`.
+3. Seed **one `admin`** and **one `viewer`** starter account (bcrypt hashes
+   generated by a setup step; passwords defaulted and printed once).
+
+**Flow:**
+- `POST /api/auth/login  {username, password}` → `{access_token, token_type, role, username}`.
+- JWT carries `sub` (user id), `username`, `role`; signed with a configurable
+  secret from env; default expiry configurable (e.g. 8h).
+- Every protected route depends on `get_current_user` + an optional
+  `require_role("admin")` guard. Mutations (POST/PUT/DELETE) require `admin`;
+  `viewer` gets reads + exports only (`403` otherwise; UI hides mutation buttons
+  for viewers).
+
+---
+
+## 7. Roles
+
+| Role    | Reads / analytics | Export (CSV/XLSX) | Create/Update/Delete | Seed (generate/bulk) |
+|---------|-------------------|-------------------|----------------------|----------------------|
+| `admin` | ✅                | ✅                | ✅                   | ✅                   |
+| `viewer`| ✅                | ✅                | ❌ (403)             | ❌ (403)             |
+
+---
+
+## 8. REST API
+
+Base path `/api`. Generic conventions:
+
+- **List:** `GET /api/{entity}` with `page` (1-based), `pageSize` (default 20,
+  max 200), filter params, `sortBy`/`sortDir`. Response `{items: [...], total,
+  page, pageSize}`. Lists join related display names (e.g. orders → customer
+  full_name + store_name + computed total; employees → dept name, job title,
+  manager name).
+- **Read one:** `GET /api/{entity}/{id}`.
+- **Create:** `POST /api/{entity}`.
+- **Update:** `PUT /api/{entity}/{id}`.
+- **Delete:** `DELETE /api/{entity}/{id}`.
+- **Lookups** (read-only dropdown sources): `GET /api/lookup/stores`,
+  `.../departments`, `.../jobs`, `.../managers`, `.../locations`,
+  `.../order-statuses`, `.../countries`, `.../regions`,
+  `.../products` (for line items), `.../customers` (for orders).
+- **Analytics:** `GET /api/analytics/...` (Section 10).
+- **Export:** `GET /api/export/{entity}?format=csv|xlsx&<filters>` (Section 11).
+- **Seeding:** Section 9.
+- **Health:** `GET /api/health` (DB reachable + version) — unauthenticated.
+
+**Entities (REST root):**
+- `customers` — full CRUD.
+- `orders` — full CRUD, treats order as parent + `order_items` children in one
+  transaction (Section 9.3).
+- `products` — full CRUD.
+- `employees` — full CRUD (dept, job, manager from lookups).
+- Everything else — read-only via lookups or analytics.
+
+**Error envelope (all non-2xx):**
+```json
+{ "detail": "human-readable message", "code": "MACHINE_CODE" }
+```
+Oracle constraint violations (e.g. duplicate email, FK violation, CHECK
+violation) are caught and mapped to friendly `409` / `400` responses with the
+underlying constraint surfaced when useful.
+
+**Pagination:** offset/limit plus a `COUNT(*)` total. Default sort for orders is
+`order_tms DESC`; customers `full_name`; products `product_name`; employees
+`last_name, first_name`. Date filters use explicit ranges (`from`/`to`,
+ISO-8601) which keep the large-table analytics index-friendly.
+
+---
+
+## 9. CRUD + Procedural Seeding
+
+### 9.1 Principles
+- Generation logic lives **server-side** so Oracle constraints are enforced in
+  one place; the client form remains fully editable.
+
+### 9.2 Single-row generation
+- `GET /api/{entity}/generate` (admin) returns **one** faker-built, valid
+  payload for that entity (e.g. unique email, realistic name, plausible price /
+  qty, department/job/manager drawn from live lookups).
+- The create (and edit) form has a **"🎲 Generate"** button that fills the
+  fields; the user can still edit before saving (edge-case testing preserved).
+- `employees.generate`: names, email derived from names (unique), phone,
+  hire_date recent, salary within job's range, commission for sales jobs,
+  manager from same/any department, dept/job from live lookups.
+- `customers.generate`: distinct full_name + unique email.
+- `products.generate`: name from product wordlists, unit_price in plausible
+  range, nullable details left blank.
+- `orders.generate`: pick existing customer + store, order_tms recent, status
+  from allowed set; generates matching `order_items` lines (1–4 random products
+  with random qty + unit_price snapshot).
+
+### 9.3 Orders are parent + children
+- Create/update payload shape:
+  ```json
+  {
+    "customer_id": 12, "store_id": 3, "order_status": "COMPLETE",
+    "order_tms": "2026-09-01T10:00:00",
+    "items": [ {"product_id": 1, "quantity": 2, "unit_price": 19.99}, ... ]
+  }
+  ```
+- Backend wraps header insert + item inserts in a single transaction and returns
+  the combined order. Update replaces line items (delete + reinsert). Deletes
+  also remove child rows. Line-item `shipment_id` is optional/null.
+- `orders.generate` returns a fully-valid payload including `items`.
+
+### 9.4 Bulk generation
+- `POST /api/{entity}/bulk  {count: 1..1000}` (admin) inserts `count` random
+  valid rows server-side and returns the count inserted + sample ids. Useful for
+  scaling test data quickly. Orders bulk generates header + items each.
+
+---
+
+## 10. Trends & Analytics (all server-side)
+
+All CO trends accept a global **date range** (`from`,`to`) and relevant filters;
+aggregations run in Oracle. Default date range = last 12 months to keep the
+1M-row tables responsive.
+
+| # | Trend                        | Schema | Visualization      | Key SQL shape                                       |
+|---|------------------------------|--------|--------------------|-----------------------------------------------------|
+| 1 | Revenue over time            | CO     | line (day/week/month) | `SUM(qty*unit_price)` from order_items×orders grouped by truncated `order_tms` |
+| 2 | Orders by status             | CO     | pie / doughnut     | `COUNT(*)` group by `order_status`                  |
+| 3 | Top products by revenue & qty| CO     | bar                | `SUM(qty*unit_price)`, `SUM(qty)` group by product, top N |
+| 4 | Revenue by store             | CO     | bar                | join orders→stores, sum, group by store             |
+| 5 | Top customers by spend       | CO     | leaderboard table  | join customers→orders→items, sum, order desc, top N |
+| 6 | Headcount by department      | HR     | bar                | `COUNT(*)` group by department                      |
+| 7 | Salary stats                 | HR     | bars + histogram   | avg/min/max by job & dept; salary distribution buckets |
+| 8 | Hires over time              | HR     | line               | `COUNT(*)` group by hire month/year                 |
+
+Endpoints (all `GET /api/analytics/...`):
+`revenue-over-time`, `orders-by-status`, `top-products`, `revenue-by-store`,
+`top-customers`, `headcount-by-dept`, `salary-stats`, `hires-over-time`.
+
+Where the shipped indexes are insufficient for large-table filters, add targeted
+composite indexes via the provisioning/migration step (e.g.
+`orders(order_tms)`, `order_items(order_id)`, `order_items(product_id)`).
+
+---
+
+## 11. Export (CSV + XLSX, current filtered view)
+
+- `GET /api/export/{entity}?format=csv|xlsx&<filters & sort>` (admin + viewer).
+- Runs the **same filtered query** as the corresponding list view, streams the
+  result, and returns a file download:
+  - **CSV:** streamed `StreamingResponse`, UTF-8 with BOM (Excel-friendly).
+  - **XLSX:** built in memory with `openpyxl`, typed cells + a header row
+    (optionally a summary sheet for analytics exports).
+- `Content-Disposition` attachment with a timestamped filename
+  (`customers_2026-10-04_1430.csv`). Exports only what's on screen
+  (respecting current filters/sort), never the entire table.
+
+---
+
+## 12. Frontend
+
+### 12.1 Basis
+Vue 3 + Vite; PrimeVue 4 with the **Sakai** theme preset (topbar + collapsible
+sidebar + light/dark theme switcher); **Tailwind CSS** layered on for layout and
+custom styling; Vue Router; Pinia for auth + data state; Axios with an
+interceptor that attaches the JWT and handles 401 → redirect to login.
+
+### 12.2 Pages
+- **Login** (`/login`) — public.
+- **Dashboard / Trends** (`/`) — global date-range filter + the 8 analytics
+  cards/charts, grouped into Orders/Customers trends and Employees trends.
+- **Employees** (`/employees`) — CRUD table (+ generate/bulk), filters.
+- **Orders** (`/orders`) — CRUD table with line-item editing in a dialog,
+  filters by status/date/customer/store.
+- **Customers** (`/customers`) — CRUD table + generate/bulk.
+- **Products** (`/products`) — CRUD table + generate/bulk.
+- **Users (admin only)** (`/users`) — manage `app_users` (create admin/viewer,
+  reset passwords, deactivate).
+
+### 12.3 Structure
+```
+frontend/src/
+  api/        axios client + endpoint modules
+  stores/     auth store (token, role, user), ui store
+  router/     routes + auth guards (redirect to /login, role-based route meta)
+  layouts/    Sakai shell (topbar, sidebar, theme)
+  views/      login, dashboard/trends, employees, orders, customers, products, users
+  components/ data-table (pagination/sort/filter/export), crud-dialog, generate-btn,
+              chart-card, date-range-picker, entity-list
+```
+
+### 12.4 UX notes
+- PrimeVue `DataTable` for listing (sorting, Lazy paging, row selection).
+- CRUD via dialogs with Pydantic-shaped forms; inline validation; toast on
+  success/error.
+- Charts resize to container; analytics views refetch on date-range change.
+- Viewer role: mutation buttons hidden; a small "read-only" badge shows.
+
+---
+
+## 13. Config & Environment
+
+`.env` (gitignored) with `.env.example` committed:
+
+```
+ORACLE_DSN=localhost:1521/FREEPDB1
+ORACLE_CO_USER=co
+ORACLE_CO_PASSWORD=letmein
+ORACLE_HR_USER=hr
+ORACLE_HR_PASSWORD=letmein
+ORACLE_DASH_USER=dashboard
+ORACLE_DASH_PASSWORD=...
+JWT_SECRET=<random>
+JWT_EXPIRY_MINUTES=480
+CORS_ORIGINS=http://localhost:5173
+DEFAULT_DATE_RANGE_DAYS=365
+```
+
+FastAPI reads these via `pydantic-settings`/`python-dotenv`. Sensitive values
+never appear in code or the repo.
+
+---
+
+## 14. Error Handling & Security
+
+- Global exception handlers → uniform `{detail, code}` envelope.
+- Oracle-specific errors (`ORA-00001` uniqueness, `ORA-02291` FK, `ORA-02290`
+  CHECK) mapped to friendly `409`/`400`.
+- JWT secret from env; bcrypt password hashing; constant-time comparisons via
+  PyJWT/bcrypt defaults.
+- CORS restricted to the Vite dev origin; in prod, same-origin (no CORS).
+- SQL fully parameterized (no string interpolation of user input).
+- Input validated at the Pydantic boundary before reaching SQL.
+
+---
+
+## 15. Testing
+
+- **Unit (no DB):** auth (JWT encode/decode, password hashing), Pydantic schema
+  validation, faker generator shape/constraints, config loading.
+- **Integration (read-only, real Oracle):** a list query returns expected shape
+  and paginates; a couple of analytics endpoints return sane aggregates; export
+  produces parseable CSV/XLSX for a small filter window. Reads only — tests must
+  not mutate the sample data.
+- CRUD/mutation logic tested against the disposable `dashboard` schema where
+  possible, and via the API in an admin-only happy-path integration test with a
+  rollback/cleanup step. Keep pragmatic; full DB-mutation suites are
+  intentionally limited.
+
+---
+
+
+## 16. Running (dev) & Containerization
+
+**Dev:**
+```
+# terminal 1
+cd hr_co_dashboard/backend ; uvicorn app.main:app --reload --port 8000
+# terminal 2
+cd hr_co_dashboard/frontend ; npm install ; npm run dev   # :5173, proxies /api
+```
+
+**Containerization (later, structure ready now):**
+- `frontend/Dockerfile` → build `dist`, serve via FastAPI static mount (Node
+  build stage + nginx optional).
+- `backend/Dockerfile` → Python image with deps.
+- `docker-compose.yml` skeleton referencing the existing Oracle service (or its
+  own Oracle service) — a later no-op wrap of the same app.
+
+---
+
+## 17. Project Layout (final)
+
+```
+hr_co_dashboard/
+  docs/superpowers/specs/2026-10-04-hr-co-dashboard-design.md   # this file
+  backend/
+    app/
+      main.py            # FastAPI app, CORS, routers, static mount (prod)
+      config.py          # pydantic-settings/EnvConfig
+      db.py              # oracledb pools (CO, HR, dashboard) + helpers
+      security.py        # JWT create/verify, bcrypt hash
+      deps.py            # get_current_user, require_role
+      schemas/           # pydantic models (auth, customers, orders, products, employees, common)
+      repositories/      # thin SQL layers: customers, orders, products, employees, lookup, metrics, users
+      routers/           # auth, customers, orders, products, employees, lookup, analytics, export, users, health
+      seeding/           # faker generators + bulk workers
+      errors.py          # exception handlers + Oracle error mapping
+    seed/
+      provision_dashboard.sql   # create dashboard schema + app_users + indexes
+      seed_users.py             # create admin + viewer starter accounts (bcrypt)
+    tests/               # unit + read-only integration
+    requirements.txt
+    .env.example
+    .gitignore
+  frontend/
+    (Vite + Vue3 + PrimeVue Sakai + Tailwind)
+    src/ ... (see 12.3)
+    package.json, vite.config.js, tailwind.config.js (or v4 css)
+    Dockerfile
+  backend/Dockerfile
+  docker-compose.yml (skeleton)
+  README.md
+```
+
+---
+
+## 18. Open Notes / Decisions Logged
+
+- Starter accounts: **`admin`** (role `admin`) and **`user`** (role `viewer`);
+  passwords generated at provisioning, printed once, changable after login.
+- `orders` list default sorted newest-first; analytics default window last 12 mo.
+- `job_history`, `shipments`, `inventory`, `stores` are read-only reference data
+  surfaced via lookups/analytics — not full CRUD.
+- Password rotation for the four Oracle accounts is out of scope (existing
+  `letmein` dev creds reused for CO/HR; `dashboard` gets its own).
