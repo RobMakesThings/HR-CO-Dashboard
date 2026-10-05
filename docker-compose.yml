@@ -1,0 +1,21 @@
+# Containerization skeleton. The app expects an Oracle instance (CO + HR +
+# dashboard schemas). By default it reaches the Oracle running on your host
+# via host.docker.internal. Override with env vars as needed.
+#
+#   docker compose up --build
+services:
+    app:
+        build: .
+        ports:
+            - '8000:8000'
+        environment:
+            ORACLE_DSN: ${ORACLE_DSN:-host.docker.internal:1521/FREEPDB1}
+            ORACLE_CO_USER: co
+            ORACLE_CO_PASSWORD: ${ORACLE_CO_PASSWORD:-letmein}
+            ORACLE_HR_USER: hr
+            ORACLE_HR_PASSWORD: ${ORACLE_HR_PASSWORD:-letmein}
+            ORACLE_DASH_USER: dashboard
+            ORACLE_DASH_PASSWORD: ${ORACLE_DASH_PASSWORD:-dashboard_pwd}
+            JWT_SECRET: ${JWT_SECRET:-change-me-please}
+            JWT_EXPIRY_MINUTES: 480
+            CORS_ORIGINS: http://localhost:5173
