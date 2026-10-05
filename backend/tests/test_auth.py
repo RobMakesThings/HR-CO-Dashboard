@@ -41,3 +41,20 @@ def test_admin_can_list_users():
     assert r.status_code == 200
     usernames = [u["username"] for u in r.json()]
     assert "admin" in usernames and "user" in usernames
+
+
+def test_admin_crud_user():
+    name = f"tmp{__import__('time').time_ns()}"
+    r = client.post(
+        "/api/users",
+        json={"username": name, "password": "secret1", "role": "viewer"},
+        headers=_auth_headers("admin"),
+    )
+    assert r.status_code == 201, r.text
+    uid = r.json()["app_user_id"]
+    r2 = client.put(
+        f"/api/users/{uid}", json={"role": "admin"}, headers=_auth_headers("admin")
+    )
+    assert r2.status_code == 200 and r2.json()["role"] == "admin"
+    r3 = client.delete(f"/api/users/{uid}", headers=_auth_headers("admin"))
+    assert r3.status_code == 200

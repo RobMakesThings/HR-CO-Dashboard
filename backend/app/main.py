@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .config import settings
 from .errors import init_handlers
-from .routers import auth, health, users
+from .routers import auth, customers, health, users
 
 app = FastAPI(title="HR + CO Dashboard", version="0.1.0")
 
@@ -20,3 +20,4 @@ init_handlers(app)
 app.include_router(health.router, prefix="/api")
 app.include_router(auth.router, prefix="/api")
 app.include_router(users.router, prefix="/api")
+app.include_router(customers.router, prefix="/api")

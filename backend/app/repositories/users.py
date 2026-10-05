@@ -1,3 +1,5 @@
+import oracledb
+
 from ..db import dash_pool
 from ..errors import ClientError
 from ..schemas.auth import UserCreate, UserUpdate
@@ -50,7 +52,7 @@ def list_users() -> list[dict]:
 def create_user(data: UserCreate) -> dict:
     with dash_pool().acquire() as conn:
         cur = conn.cursor()
-        uid = cur.var(int)
+        uid = cur.var(oracledb.NUMBER)
         try:
             cur.execute(
                 "INSERT INTO app_users (username, password_hash, role) "
@@ -58,7 +60,7 @@ def create_user(data: UserCreate) -> dict:
                 (data.username, hash_password(data.password), data.role, uid),
             )
             conn.commit()
-            return get_user(uid.getvalue())
+            return get_user(uid.getvalue()[0])
         except Exception as exc:
             conn.rollback()
             if "ORA-00001" in str(exc):
