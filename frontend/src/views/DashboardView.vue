@@ -77,7 +77,13 @@ async function load() {
     }
 }
 const currency = (v) => `$${Number(v).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
-const axisOpts = { responsive: true, maintainAspectRatio: false };
+const axisOpts = {
+    responsive: true,
+    maintainAspectRatio: false,
+    scales: {
+        x: { ticks: { autoSkip: true, maxTicksLimit: 6, maxRotation: 45, minRotation: 0, font: { size: 10 } } }
+    }
+};
 
 onMounted(load);
 </script>
@@ -110,7 +116,7 @@ onMounted(load);
                 </ChartCard>
                 <ChartCard title="Top customers by spend" :loading="false">
                     <div class="w-full">
-                        <DataTable :value="topCustomers" :rows="10" responsiveLayout="scroll" class="w-full">
+                        <DataTable :value="topCustomers" :rows="10" scrollable scrollHeight="300px" responsiveLayout="scroll" class="w-full">
                             <Column field="full_name" header="Customer" />
                             <Column field="spend" header="Spend">
                                 <template #body="{ data }">{{ currency(data.spend) }}</template>

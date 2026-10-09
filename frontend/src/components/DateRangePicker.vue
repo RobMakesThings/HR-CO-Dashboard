@@ -26,5 +26,5 @@ function onChange(d) {
 </script>
 
 <template>
-    <DatePicker v-model="dates" selectionMode="range" :manualInput="false" showIcon dateFormat="yy-mm-dd" @update:modelValue="onChange" />
+    <DatePicker v-model="dates" selectionMode="range" :manualInput="false" showIcon dateFormat="yy-mm-dd" class="w-full sm:w-auto" @update:modelValue="onChange" />
 </template>

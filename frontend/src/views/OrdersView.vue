@@ -1,7 +1,7 @@
 <script setup>
 import { onMounted, ref } from 'vue';
 import { useToast } from 'primevue/usetoast';
-import DataTable from '@/components/DataTable.vue';
+import EntityTable from '@/components/EntityTable.vue';
 import DateRangePicker from '@/components/DateRangePicker.vue';
 import { createEntity, getEntity, lookup, updateEntity } from '@/api/endpoints';
 
@@ -127,7 +127,7 @@ async function save() {
             </div>
         </div>
 
-        <DataTable
+        <EntityTable
             entity="orders"
             pk-field="order_id"
             :columns="columns"

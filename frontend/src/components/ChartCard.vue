@@ -12,9 +12,11 @@ defineProps({
             <span class="font-semibold text-lg">{{ title }}</span>
         </template>
         <template #content>
-            <div class="flex items-center justify-center" :style="{ height }">
-                <ProgressSpinner v-if="loading" style="width: 40px; height: 40px" strokeWidth="4" />
-                <slot v-else />
+            <div v-if="loading" class="flex items-center justify-center" :style="{ height }">
+                <ProgressSpinner style="width: 40px; height: 40px" strokeWidth="4" />
+            </div>
+            <div v-else class="w-full" :style="{ height }">
+                <slot />
             </div>
         </template>
     </Card>

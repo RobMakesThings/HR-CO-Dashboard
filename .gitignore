@@ -1,0 +1,4 @@
+backend/backend.log
+backend/vite-dev.log
+frontend/vite-dev.log
+*.log

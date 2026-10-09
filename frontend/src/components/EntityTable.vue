@@ -118,21 +118,24 @@ onMounted(load);
 <template>
     <Card>
         <template #content>
-            <div class="flex flex-wrap items-center gap-3 mb-4">
-                <IconField v-if="props.searchable">
-                    <InputIcon class="pi pi-search" />
-                    <InputText v-model="query" placeholder="Search..." class="w-56" @input="onSearch" />
-                </IconField>
-                <div class="flex-1"></div>
-                <div v-if="auth.isAdmin && props.allowSeed" class="flex items-center gap-2">
-                    <InputNumber v-model="bulkCount" :min="1" :max="1000" showButtons buttonLayout="horizontal" decrementButtonClass="p-button-secondary" incrementButtonClass="p-button-secondary" incrementButtonIcon="pi pi-plus" decrementButtonIcon="pi pi-minus" style="width: 8rem" />
-                    <Button label="Bulk add" icon="pi pi-database" text severity="secondary" @click="doBulk" />
+            <div class="flex flex-col gap-3 mb-4">
+                <div class="flex flex-wrap items-center justify-between gap-3">
+                    <IconField v-if="props.searchable" class="w-full sm:w-auto">
+                        <InputIcon class="pi pi-search" />
+                        <InputText v-model="query" placeholder="Search..." class="w-full sm:w-56" @input="onSearch" />
+                    </IconField>
+                    <Button v-if="auth.isAdmin" label="New" icon="pi pi-plus" @click="emit('create')" />
                 </div>
-                <template v-if="props.allowExport">
-                    <SelectButton v-model="exportFormat" :options="['csv', 'xlsx']" />
-                    <Button label="Export" icon="pi pi-download" outlined @click="doExport" />
-                </template>
-                <Button v-if="auth.isAdmin" label="New" icon="pi pi-plus" @click="emit('create')" />
+                <div v-if="(auth.isAdmin && props.allowSeed) || props.allowExport" class="flex flex-wrap items-center justify-end gap-2">
+                    <div v-if="auth.isAdmin && props.allowSeed" class="flex items-center gap-2">
+                        <InputNumber v-model="bulkCount" :min="1" :max="1000" showButtons buttonLayout="horizontal" decrementButtonClass="p-button-secondary" incrementButtonClass="p-button-secondary" incrementButtonIcon="pi pi-plus" decrementButtonIcon="pi pi-minus" style="width: 8rem" />
+                        <Button label="Bulk add" icon="pi pi-database" text severity="secondary" @click="doBulk" />
+                    </div>
+                    <template v-if="props.allowExport">
+                        <SelectButton v-model="exportFormat" :options="['csv', 'xlsx']" />
+                        <Button label="Export" icon="pi pi-download" outlined @click="doExport" />
+                    </template>
+                </div>
             </div>
 
             <DataTable

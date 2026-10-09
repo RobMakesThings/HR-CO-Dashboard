@@ -1,7 +1,7 @@
 <script setup>
 import { onMounted, ref } from 'vue';
 import { useToast } from 'primevue/usetoast';
-import DataTable from '@/components/DataTable.vue';
+import EntityTable from '@/components/EntityTable.vue';
 import CrudDialog from '@/components/CrudDialog.vue';
 import { createEntity, lookup, updateEntity } from '@/api/endpoints';
 
@@ -93,7 +93,7 @@ async function save(payload) {
                 <Select v-model="filters.job_id" :options="jobs" optionLabel="label" optionValue="value" placeholder="Job" showClear class="w-56" />
             </div>
         </div>
-        <DataTable entity="employees" pk-field="employee_id" :columns="columns" :filters="filters" @create="openCreate" @edit="openEdit" />
+        <EntityTable entity="employees" pk-field="employee_id" :columns="columns" :filters="filters" @create="openCreate" @edit="openEdit" />
         <CrudDialog v-model:visible="dialog" title="Employee" entity="employees" :fields="fields" :model="model" :saving="saving" @save="save" @close="dialog = false" />
     </div>
 </template>

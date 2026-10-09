@@ -1,7 +1,7 @@
 <script setup>
 import { ref } from 'vue';
 import { useToast } from 'primevue/usetoast';
-import DataTable from '@/components/DataTable.vue';
+import EntityTable from '@/components/EntityTable.vue';
 import CrudDialog from '@/components/CrudDialog.vue';
 import { createEntity, updateEntity } from '@/api/endpoints';
 
@@ -63,7 +63,7 @@ async function save(payload) {
 <template>
     <div class="p-6">
         <h2 class="text-2xl font-semibold mb-4">Users (Admin)</h2>
-        <DataTable entity="users" pk-field="app_user_id" :columns="columns" :allow-seed="false" :allow-export="false" :searchable="false" @create="openCreate" @edit="openEdit" />
+        <EntityTable entity="users" pk-field="app_user_id" :columns="columns" :allow-seed="false" :allow-export="false" :searchable="false" @create="openCreate" @edit="openEdit" />
         <CrudDialog v-model:visible="dialog" title="User" :fields="fields" :model="model" :saving="saving" @save="save" @close="dialog = false" />
     </div>
 </template>
