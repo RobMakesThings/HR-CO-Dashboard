@@ -21,7 +21,7 @@ ADMIN_PASSWORD = os.environ.get("DASH_ADMIN_PASSWORD", "admin123")
 VIEWER_PASSWORD = os.environ.get("DASH_USER_PASSWORD", "user123")
 
 
-def _connect(user: str, password: str) -> oracledb.Connection:
+def _connect(user: str, password: str) -> "oracledb.Connection":
     return oracledb.connect(user=user, password=password, dsn=settings.oracle_dsn)
 
 
