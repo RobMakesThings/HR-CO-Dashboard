@@ -47,10 +47,14 @@ async function load() {
     }
 }
 
-watch(props.filters, () => {
-    first.value = 0;
-    load();
-}, { deep: true });
+watch(
+    () => props.filters,
+    () => {
+        first.value = 0;
+        load();
+    },
+    { deep: true }
+);
 watch([first, rowsPerPage], load);
 
 function onSearch() {
